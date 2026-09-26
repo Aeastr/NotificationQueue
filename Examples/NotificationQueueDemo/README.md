@@ -5,7 +5,7 @@ Explore real local reminders, overflow, generated IDs, batch replacement, and re
 ## Run
 
 1. Clone or download the whole NotificationQueue repository.
-2. Open `NotificationQueueDemo.xcodeproj` in this folder.
+2. Open `NotificationQueueDemo.xcodeproj` in this folder using Xcode 26 or later (for the Icon Composer app icon).
 3. Select the **NotificationQueueDemo** scheme and an iPhone or iPad simulator, then Run.
 4. Tap **Allow notifications**, then schedule a reminder.
 

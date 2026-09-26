@@ -11,8 +11,14 @@ struct DemoView: View {
         NavigationStack {
             List {
                 Section {
-                    Label("NotificationQueue", systemImage: "bell.badge")
-                        .font(.title2.bold())
+                    HStack(spacing: 12) {
+                        Image("icon")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 56, height: 56)
+                            .accessibilityHidden(true)
+                        Text("NotificationQueue").font(.title2.bold())
+                    }
                     Text("See what is pending, what is waiting, and what happened when scheduling could not finish.")
                         .foregroundStyle(.secondary)
                     LabeledContent("Notifications", value: model.permissionLabel)
