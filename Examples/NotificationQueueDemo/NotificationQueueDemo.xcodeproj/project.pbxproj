@@ -1,0 +1,33 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		22080533622546DA86BE1295 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationQueueDemoApp.swift; sourceTree = "<group>"; };
+		7352BEF538304731A64B254B = { isa = PBXBuildFile; fileRef = 22080533622546DA86BE1295; };
+		F13997E299AB448FA2EB8A00 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoModel.swift; sourceTree = "<group>"; };
+		2D30CD7A074D4E2B8E0DD126 = { isa = PBXBuildFile; fileRef = F13997E299AB448FA2EB8A00; };
+		8F6CDF8B7707499F8ADBAD05 = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoView.swift; sourceTree = "<group>"; };
+		26D64CC2AC354FD982D91381 = { isa = PBXBuildFile; fileRef = 8F6CDF8B7707499F8ADBAD05; };
+		033C9E30150242A38210E149 = { isa = PBXBuildFile; productRef = 3BFF46DE91414D0EA188AB6E; };
+		E535DBB3C62B4CE3BA41D1BD = { isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NotificationQueueDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F51A3A79EEA54FE0A0662BA2 = { isa = PBXGroup; children = (E2996B29634A48E490DC51B3, DF4D58F722964202AD001890); sourceTree = "<group>"; };
+		E2996B29634A48E490DC51B3 = { isa = PBXGroup; children = (22080533622546DA86BE1295, F13997E299AB448FA2EB8A00, 8F6CDF8B7707499F8ADBAD05); path = NotificationQueueDemo; sourceTree = "<group>"; };
+		DF4D58F722964202AD001890 = { isa = PBXGroup; children = (E535DBB3C62B4CE3BA41D1BD); name = Products; sourceTree = "<group>"; };
+		73DBE34A78C7498F9BDE3377 = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (7352BEF538304731A64B254B, 2D30CD7A074D4E2B8E0DD126, 26D64CC2AC354FD982D91381); runOnlyForDeploymentPostprocessing = 0; };
+		0CD233E9C455430C9D4A1275 = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (033C9E30150242A38210E149); runOnlyForDeploymentPostprocessing = 0; };
+		E3D431A3A8934BDA819765D8 = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		E467C745813C48D3A74EF51F = { isa = XCLocalSwiftPackageReference; relativePath = ../..; };
+		3BFF46DE91414D0EA188AB6E = { isa = XCSwiftPackageProductDependency; package = E467C745813C48D3A74EF51F; productName = NotificationQueue; };
+		BF0BCD7F152E476FB7155D1F = { isa = PBXNativeTarget; buildConfigurationList = 595D2156FD4C4BE782F9FCA9; buildPhases = (73DBE34A78C7498F9BDE3377, 0CD233E9C455430C9D4A1275, E3D431A3A8934BDA819765D8); buildRules = (); dependencies = (); name = NotificationQueueDemo; packageProductDependencies = (3BFF46DE91414D0EA188AB6E); productName = NotificationQueueDemo; productReference = E535DBB3C62B4CE3BA41D1BD; productType = "com.apple.product-type.application"; };
+		AE5748FACED3441DA6434409 = { isa = PBXProject; attributes = { BuildIndependentTargetsInParallel = 1; LastUpgradeCheck = 1600; }; buildConfigurationList = EEC34C6075B8498EA6909171; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = F51A3A79EEA54FE0A0662BA2; packageReferences = (E467C745813C48D3A74EF51F); productRefGroup = DF4D58F722964202AD001890; projectDirPath = ""; projectRoot = ""; targets = (BF0BCD7F152E476FB7155D1F); };
+		EEC34C6075B8498EA6909171 = { isa = XCConfigurationList; buildConfigurations = (40CF78639AA24869A0A8951B, EE75431D2C5A49C5B47FF1AA); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		40CF78639AA24869A0A8951B = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; ENABLE_TESTABILITY = YES; }; name = Debug; };
+		EE75431D2C5A49C5B47FF1AA = { isa = XCBuildConfiguration; buildSettings = { CLANG_ENABLE_MODULES = YES; IPHONEOS_DEPLOYMENT_TARGET = 16.0; SDKROOT = iphoneos; SWIFT_VERSION = 5.0; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; }; name = Release; };
+		595D2156FD4C4BE782F9FCA9 = { isa = XCConfigurationList; buildConfigurations = (6CC44A6BE7324B2E847F964A, F82A9840A8244E3FAEC0E336); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		6CC44A6BE7324B2E847F964A = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Queue Explorer"; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; PRODUCT_BUNDLE_IDENTIFIER = org.notificationqueue.demo; PRODUCT_NAME = "$(TARGET_NAME)"; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 1.0; TARGETED_DEVICE_FAMILY = "1,2"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = YES; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; }; name = Debug; };
+		F82A9840A8244E3FAEC0E336 = { isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = "Queue Explorer"; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; PRODUCT_BUNDLE_IDENTIFIER = org.notificationqueue.demo; PRODUCT_NAME = "$(TARGET_NAME)"; CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 1.0; TARGETED_DEVICE_FAMILY = "1,2"; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = YES; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks"; }; name = Release; };
+	};
+	rootObject = AE5748FACED3441DA6434409;
+}
