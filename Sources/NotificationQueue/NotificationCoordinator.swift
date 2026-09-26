@@ -18,15 +18,25 @@ public struct ReminderPolicy: Sendable {
     public let warningBody: String
     public let warningLeadTime: TimeInterval
     public let recoveryInterval: TimeInterval
+    public let coverageWarningsEnabled: Bool
+    public static var defaultCoverageWarningsEnabled: Bool {
+        #if os(tvOS)
+        false
+        #else
+        true
+        #endif
+    }
     public var warningID: String { "__coverage" }
     public init(namespace: String, pendingBudget: Int = 60, warningTitle: String, warningBody: String,
-                warningLeadTime: TimeInterval = 24 * 3600, recoveryInterval: TimeInterval = 48 * 3600) {
+                warningLeadTime: TimeInterval = 24 * 3600, recoveryInterval: TimeInterval = 48 * 3600,
+                coverageWarningsEnabled: Bool = ReminderPolicy.defaultCoverageWarningsEnabled) {
         precondition(!namespace.isEmpty, "A notification namespace is required")
         self.namespace = namespace
         self.pendingBudget = max(2, min(63, pendingBudget))
         self.warningTitle = warningTitle; self.warningBody = warningBody
         self.warningLeadTime = max(0, warningLeadTime)
         self.recoveryInterval = max(0, recoveryInterval)
+        self.coverageWarningsEnabled = coverageWarningsEnabled
     }
 }
 
@@ -67,9 +77,10 @@ public final class NotificationCoordinator {
                   journal.batches.values.allSatisfy({ !$0.id.isEmpty
                       && ($0.evaluatedThrough?.timeIntervalSince1970.isFinite ?? true) }),
                   reminders.allSatisfy({ !$0.id.isEmpty && $0.id != reconciler.policy.warningID
-                      && $0.date.timeIntervalSince1970.isFinite }) else {
+                      && $0.date.timeIntervalSince1970.isFinite && ($0.badge.map { $0 >= 0 } ?? true) }) else {
                 throw ReminderSchedulingError.invalidBatch
             }
+            try reconciler.notifications.validate(reminders)
             // Discard elapsed one-offs without losing future overflow.
             journal.batches = journal.batches.mapValues {
                 ReminderBatch(id: $0.id, reminders: $0.reminders.filter { $0.date > reconciler.now() },

@@ -1,8 +1,16 @@
 <div>
   <h1>NotificationQueue <img src="resources/icon.png" alt="NotificationQueue icon" width="96" height="96" align="right"></h1>
-  <p>Schedule more local reminders than iOS can hold at once. NotificationQueue stores overflow and schedules the next reminders as slots become available and your app gets time to run.</p>
-  <p><img src="https://img.shields.io/badge/iOS-16%2B-000000?logo=apple" alt="iOS 16+"> <img src="https://img.shields.io/badge/macOS-13%2B-000000?logo=apple" alt="macOS 13+"> <img src="https://img.shields.io/badge/Swift-5.10%2B-F05138?logo=swift&amp;logoColor=white" alt="Swift 5.10+"></p>
+  <p>Schedule more local reminders than the system can hold at once. NotificationQueue stores overflow and schedules the next reminders as slots become available and your app gets time to run.</p>
+  <p><img src="https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-000000?logo=apple" alt="iOS / iPadOS 16+"> <img src="https://img.shields.io/badge/macOS-13%2B-000000?logo=apple" alt="macOS 13+"> <img src="https://img.shields.io/badge/Mac%20Catalyst-16%2B-000000?logo=apple" alt="Mac Catalyst 16+"> <img src="https://img.shields.io/badge/watchOS-9%2B-000000?logo=apple" alt="watchOS 9+"> <img src="https://img.shields.io/badge/tvOS-16%2B-000000?logo=apple" alt="tvOS 16+"> <img src="https://img.shields.io/badge/visionOS-1%2B-000000?logo=apple" alt="visionOS 1+"> <img src="https://img.shields.io/badge/Swift-5.10%2B-F05138?logo=swift&amp;logoColor=white" alt="Swift 5.10+"></p>
 </div>
+
+## Platform behaviour
+
+The queue and persistence layer supports iOS/iPadOS 16+, Mac Catalyst 16+, macOS 13+, watchOS 9+, tvOS 16+, and visionOS 1+. Each app supplies execution opportunities appropriate to its platform.
+
+On **tvOS**, Apple supports notification badges but not alert titles, bodies, or sounds. Supply a nonnegative `badge` value on each `LocalReminder` (`0` clears the badge). Text is retained as metadata and is not displayed. The Apple adapter rejects reminders without a badge before replacing batches. Coverage warning alerts are disabled by default on tvOS; the queue still reports `coverageEnd` for the host to handle. Keep that default when using the Apple adapter.
+
+On the other platforms, the Apple adapter schedules alert content with the default sound and an optional badge; presentation remains subject to the platform's notification settings. The package does not assume identical background execution or presentation across devices.
 
 ## Quick start
 
@@ -88,7 +96,7 @@ Call `update()` after domain edits and when generating fresh occurrences. Call `
 
 Local delivery does not wake your coordinator. The package cannot guarantee background execution, exceed the pending-request limit, or deliver an unlimited sequence of unique notifications without future execution time. The warning itself is scheduled in advance and does not depend on a future background task. If other features consume every available slot, no warning slot can be created.
 
-The Apple adapter currently supports dated, nonrepeating notifications with title, body and the default sound. Custom transports and journals can implement `ReminderNotificationStore` and `ReminderJournalStore`; those protocols also allow deterministic tests without notification permission or a running app.
+The Apple adapter supports dated, nonrepeating notifications, with presentation adapted to the platform as described above. Custom transports and journals can implement `ReminderNotificationStore` and `ReminderJournalStore`; those protocols also allow deterministic tests without notification permission or a running app.
 
 ## Tests
 

@@ -6,7 +6,7 @@ import XCTest
 final class NotificationCoordinatorTests: XCTestCase {
     private let epoch = Date(timeIntervalSince1970: 1_900_000_000)
     private var policy: ReminderPolicy {
-        ReminderPolicy(namespace: "test", warningTitle: "Open app", warningBody: "Refresh reminders")
+        ReminderPolicy(namespace: "test", warningTitle: "Open app", warningBody: "Refresh reminders", coverageWarningsEnabled: true)
     }
 
     private func reminder(_ index: Int, after seconds: TimeInterval? = nil, title: String = "Reminder") -> LocalReminder {
@@ -260,6 +260,33 @@ final class NotificationCoordinatorTests: XCTestCase {
         clock.date = epoch.addingTimeInterval(5 * 3600)
         try await scheduler.refresh()
         XCTAssertNil(notifications.values[policy.warningID])
+    }
+
+    func testBadgeOnlyQueueDoesNotReserveOrScheduleAlertWarnings() async throws {
+        let clock = TestClock(epoch)
+        let store = FakeNotifications(clock: clock)
+        let journal = MemoryJournal()
+        let policy = ReminderPolicy(namespace: "badges", warningTitle: "", warningBody: "",
+                                    coverageWarningsEnabled: false)
+        let scheduler = NotificationCoordinator(notifications: store, journal: journal, policy: policy, now: { clock.date })
+        let reminders = (0..<80).map {
+            LocalReminder(id: "badge.\($0)", date: epoch.addingTimeInterval(Double($0 + 1) * 3600),
+                          title: "", body: "", badge: $0)
+        }
+        let result = try await scheduler.update(batches: [ReminderBatch(id: "badges", reminders: reminders)])
+        XCTAssertEqual(store.values.count, 60)
+        XCTAssertNil(result.warningDate)
+        XCTAssertEqual(result.coverageEnd, reminders[60].date)
+        XCTAssertEqual(store.values["badge.0"]?.badge, 0)
+    }
+
+    func testBadgePersistsAndParticipatesInVerification() async throws {
+        let (scheduler, store, journal, _) = fixture()
+        let reminder = LocalReminder(id: "badge", date: epoch.addingTimeInterval(3600), title: "", body: "", badge: 4)
+        try await scheduler.update(batches: [ReminderBatch(id: "badges", reminders: [reminder])])
+        XCTAssertEqual(store.values["badge"]?.badge, 4)
+        let decoded = try JSONDecoder().decode(ReminderJournal.self, from: JSONEncoder().encode(journal.value))
+        XCTAssertEqual(decoded.batches["badges"]?.reminders.first?.badge, 4)
     }
 
     func testDatesAreNormalizedToAppleTriggerPrecision() async {

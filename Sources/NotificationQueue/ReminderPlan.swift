@@ -6,13 +6,15 @@ public struct LocalReminder: Codable, Equatable, Sendable {
     public let date: Date
     public let title: String
     public let body: String
-    public init(id: String, date: Date, title: String, body: String) {
+    public let badge: Int?
+    public init(id: String, date: Date, title: String, body: String, badge: Int? = nil) {
         self.id = id
         // Apple's calendar triggers have second precision. Normalize before persisting
         // so verification compares the same instant that the OS can represent.
         self.date = Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
         self.title = title
         self.body = body
+        self.badge = badge
     }
 }
 
@@ -30,12 +32,12 @@ public struct ReminderPlan: Codable, Sendable {
         let sorted = candidates.filter { $0.date > now }.sorted {
             $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date
         }
-        let needsWarningSlot = horizon != nil || sorted.count > capacity
+        let needsWarningSlot = policy.coverageWarningsEnabled && (horizon != nil || sorted.count > capacity)
         let selected = Array(sorted.prefix(max(0, capacity - (needsWarningSlot ? 1 : 0))))
         let omitted = sorted.dropFirst(selected.count).first?.date
         let boundary = [omitted, horizon].compactMap { $0 }.min()
         var warning: LocalReminder?
-        if let boundary, capacity > 0 {
+        if let boundary, capacity > 0, policy.coverageWarningsEnabled {
             let remaining = boundary.timeIntervalSince(now)
             // Do not nag again within the same low-coverage episode, even after restart.
             let alreadyWarned = [previous.warningDate, previous.warningAttempt?.date]
@@ -72,10 +74,15 @@ public struct ReminderJournal: Codable, Sendable {
 
 @MainActor
 public protocol ReminderNotificationStore {
+    func validate(_ reminders: [LocalReminder]) throws
     func pending() async -> [LocalReminder]
     func otherPendingCount() async -> Int
     func add(_ reminder: LocalReminder) async throws
     func remove(_ identifiers: [String]) async
+}
+
+public extension ReminderNotificationStore {
+    func validate(_ reminders: [LocalReminder]) throws {}
 }
 
 @MainActor
