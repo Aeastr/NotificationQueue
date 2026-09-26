@@ -53,15 +53,15 @@ struct ReminderDemoApp: App {
             }
 
             let reminder = LocalReminder(
-                id: "demo.reminder",
+                id: "demo.reminder", // Repeated button taps update this same reminder.
                 date: Date().addingTimeInterval(3600),
                 title: "Your reminder",
                 body: "It's time to take a break."
             )
             let result = try await notifications.schedule(reminder)
-            if result.lastOutcome?.scheduledReminderIDs.contains(reminder.id) == true {
+            if result.journal.lastOutcome?.scheduledReminderIDs.contains(reminder.id) == true {
                 status = "Reminder scheduled."
-            } else if result.lastOutcome?.deferredReminderIDs.contains(reminder.id) == true {
+            } else if result.journal.lastOutcome?.deferredReminderIDs.contains(reminder.id) == true {
                 status = "Reminder saved; waiting for a scheduling slot."
             } else {
                 status = "The reminder time passed; delivery is unknown."

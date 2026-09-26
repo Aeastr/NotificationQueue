@@ -15,10 +15,13 @@ Use ``NotificationQueue/NotificationCoordinator`` to submit and replace groups o
 ### Individual Reminders
 
 - <doc:IndividualReminders>
+- ``NotificationQueue/ReminderReceipt``
 
 ### Working with Batches
 
 - <doc:ManagingBatches>
+- ``NotificationQueue/BatchReceipt``
+- ``NotificationQueue/BatchSchedulingError``
 - ``NotificationQueue/NotificationCoordinator``
 - ``NotificationQueue/ReminderBatch``
 - ``NotificationQueue/LocalReminder``

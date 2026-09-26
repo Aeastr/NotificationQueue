@@ -4,7 +4,7 @@ Respond to scheduling results, preserve retryable work, and surface errors.
 
 ## Returned Results
 
-Every successful coordinator operation returns a ``NotificationQueue/ReminderJournal`` with a populated ``NotificationQueue/ReminderJournal/lastOutcome``. It lists ordinary reminders verified as pending, future reminders deferred in storage, and saved reminders whose dates elapsed. Elapsed dates do not prove delivery. The outcome also explains the warning status and indicates when the app must generate a new schedule window.
+Successful scheduling returns a receipt containing a `journal`; update, replace, remove, and refresh operations return the journal directly. This ``NotificationQueue/ReminderJournal`` has a populated ``NotificationQueue/ReminderJournal/lastOutcome``. It lists ordinary reminders verified as pending, future reminders deferred in storage, and saved reminders whose dates elapsed. Elapsed dates do not prove delivery. The outcome also explains the warning status and indicates when the app must generate a new schedule window.
 
 `lastOutcome` is optional because a new or older journal may have no completed pass. A stored outcome describes its last successful pass; it is not current evidence after a failed operation.
 
@@ -60,3 +60,7 @@ Already elapsed saved reminders are pruned and reported. Newly submitted elapsed
 The Apple adapter checks authorization and reads pending requests back to verify identifiers and contents, including removals. Missing, unexpected, or changed requests produce an error. Custom stores must honestly implement their throwing operations and authorization checks; the default authorization hook is a no-op for stores that have no permission model.
 
 Successful verification is a snapshot, not a delivery receipt. Apple does not expose an error for every later presentation decision or promise background execution. Focus, individual alert settings, later permission changes, and system behaviour may prevent visible presentation. No callback runs while the app has no execution time. Coverage warnings themselves use the same notification system.
+
+## Batch Scheduling Errors
+
+`BatchSchedulingError` retains the submitted batch ID, including generated IDs, and the original `underlyingError`. Inspect the underlying error for cancellation or a specific scheduling failure. Reuse its `batchID` when resubmitting. The `onEvent` observer still receives the underlying operation error once; the scheduling call wraps it with identity for the caller.

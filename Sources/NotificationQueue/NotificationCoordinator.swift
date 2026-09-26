@@ -11,8 +11,10 @@ public struct ReminderBatch: Codable, Sendable {
     public let reminders: [LocalReminder]
     /// Supply this when the batch describes only a finite window of a recurring source.
     public let evaluatedThrough: Date?
-    public init(id: String, reminders: [LocalReminder], evaluatedThrough: Date? = nil) {
-        self.id = id; self.reminders = reminders; self.evaluatedThrough = evaluatedThrough
+    /// Creates a batch with a supplied ID, or a new UUID when omitted or nil.
+    /// Retain the batch or its ID when replacing it later.
+    public init(id: String? = nil, reminders: [LocalReminder], evaluatedThrough: Date? = nil) {
+        self.id = id ?? UUID().uuidString; self.reminders = reminders; self.evaluatedThrough = evaluatedThrough
     }
 }
 
@@ -150,11 +152,12 @@ public final class NotificationCoordinator {
 
     /// Saves one reminder and schedules it when capacity permits.
     /// Reusing an ID updates that reminder, preserving its existing batch membership.
-    /// - Returns: Verified state, including pending and deferred IDs in `lastOutcome`.
+    /// - Returns: The reminder ID and verified journal, including pending and deferred IDs.
     /// - Throws: Validation, authorization, persistence, scheduling, or cancellation errors.
     @discardableResult
-    public func schedule(_ reminder: LocalReminder) async throws -> ReminderJournal {
-        try await perform(individual: .schedule(reminder))
+    public func schedule(_ reminder: LocalReminder) async throws -> ReminderReceipt {
+        let journal = try await perform(individual: .schedule(reminder))
+        return ReminderReceipt(reminder: reminder, journal: journal)
     }
 
     /// Replaces an existing reminder's date and content without changing other reminders.
@@ -173,14 +176,29 @@ public final class NotificationCoordinator {
         try await perform(individual: .remove(id))
     }
 
-    /// Saves a named batch for the first time, or replaces its complete contents when the ID exists.
-    /// Reminders omitted from a replacement are cancelled; other batches remain intact.
-    /// - Returns: Verified scheduling state, including deferred reminders.
-    /// - Throws: Validation, authorization, persistence, scheduling, or cancellation errors.
+    /// Saves a batch, generating a UUID when its ID is omitted or nil.
+    /// Reusing an ID replaces the complete batch; omitted reminders are cancelled.
+    /// - Returns: The batch ID, submitted batch, and verified scheduling journal.
+    /// - Throws: `BatchSchedulingError`, containing the batch ID and underlying error.
+    /// Retain the receipt's ID for replacement. A generated ID remains available in an error.
     @discardableResult
-    public func scheduleBatch(_ id: String, reminders: [LocalReminder],
-                              evaluatedThrough: Date? = nil) async throws -> ReminderJournal {
-        try await replaceBatch(id, with: reminders, evaluatedThrough: evaluatedThrough)
+    public func scheduleBatch(_ id: String? = nil, reminders: [LocalReminder],
+                              evaluatedThrough: Date? = nil) async throws -> BatchReceipt {
+        try await scheduleBatch(ReminderBatch(id: id, reminders: reminders, evaluatedThrough: evaluatedThrough))
+    }
+
+    /// Schedules a prepared batch whose ID is already available before the operation starts.
+    /// - Returns: The submitted batch and verified journal; overflow may remain deferred.
+    /// - Throws: `BatchSchedulingError`, preserving the submitted ID for retry or recovery.
+    @discardableResult
+    public func scheduleBatch(_ batch: ReminderBatch) async throws -> BatchReceipt {
+        do {
+            let journal = try await replaceBatch(batch.id, with: batch.reminders,
+                                                 evaluatedThrough: batch.evaluatedThrough)
+            return BatchReceipt(batch: batch, journal: journal)
+        } catch {
+            throw BatchSchedulingError(batchID: batch.id, underlyingError: error)
+        }
     }
 
     /// Schedules the complete desired contents of one named batch.

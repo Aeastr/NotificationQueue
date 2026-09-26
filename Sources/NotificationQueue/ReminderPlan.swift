@@ -10,8 +10,10 @@ public struct LocalReminder: Codable, Equatable, Sendable {
     public let title: String
     public let body: String
     public let badge: Int?
-    public init(id: String, date: Date, title: String, body: String, badge: Int? = nil) {
-        self.id = id
+    /// Creates a reminder with a caller-supplied ID or a new UUID when omitted or nil.
+    /// The ID is available immediately, before scheduling; retain it for edits and retries.
+    public init(id: String? = nil, date: Date, title: String, body: String, badge: Int? = nil) {
+        self.id = id ?? UUID().uuidString
         // Apple's calendar triggers have second precision. Normalize before persisting
         // so verification compares the same instant that the OS can represent.
         self.date = Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))

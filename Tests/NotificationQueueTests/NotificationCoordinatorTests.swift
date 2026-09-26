@@ -23,6 +23,75 @@ final class NotificationCoordinatorTests: XCTestCase {
         return (scheduler, notifications, journal, clock)
     }
 
+    func testGeneratedReminderIDIsReturnedAndCanBeEdited() async throws {
+        let (scheduler, store, _, _) = fixture()
+        let value = LocalReminder(date: epoch.addingTimeInterval(3600), title: "New", body: "")
+        XCTAssertNotNil(UUID(uuidString: value.id))
+        let receipt = try await scheduler.schedule(value)
+        XCTAssertEqual(receipt.id, value.id)
+        XCTAssertEqual(receipt.journal.lastOutcome?.scheduledReminderIDs, [value.id])
+        let edited = LocalReminder(id: receipt.id, date: epoch.addingTimeInterval(7200), title: "Edited", body: "")
+        try await scheduler.update(edited)
+        XCTAssertEqual(store.values[receipt.id], edited)
+        XCTAssertEqual(store.values.count, 1)
+        try await scheduler.removeReminder(receipt.id)
+        XCTAssertTrue(store.values.isEmpty)
+    }
+
+    func testNilIDsGenerateDistinctIdentitiesAndExplicitIDsArePreserved() {
+        let first = LocalReminder(id: nil, date: epoch, title: "", body: "")
+        let second = LocalReminder(date: epoch, title: "", body: "")
+        XCTAssertNotEqual(first.id, second.id)
+        XCTAssertEqual(LocalReminder(id: "chosen", date: epoch, title: "", body: "").id, "chosen")
+        let batch = ReminderBatch(reminders: [first])
+        XCTAssertNotNil(UUID(uuidString: batch.id))
+        XCTAssertNotEqual(batch.id, ReminderBatch(id: nil, reminders: []).id)
+        XCTAssertEqual(ReminderBatch(id: "chosen-batch", reminders: []).id, "chosen-batch")
+    }
+
+    func testGeneratedBatchReceiptSupportsReplacementAndRemoval() async throws {
+        let (scheduler, store, journal, _) = fixture()
+        let receipt = try await scheduler.scheduleBatch(reminders: [reminder(0), reminder(1)])
+        XCTAssertNotNil(UUID(uuidString: receipt.id))
+        XCTAssertEqual(receipt.batch.id, receipt.id)
+        XCTAssertEqual(receipt.journal.batches[receipt.id]?.reminders.count, 2)
+        try await scheduler.replaceBatch(receipt.id, with: [reminder(1)])
+        XCTAssertEqual(Set(store.values.keys), ["r1"])
+        XCTAssertEqual(journal.value.batches.count, 1)
+        try await scheduler.removeBatch(receipt.id)
+        XCTAssertTrue(store.values.isEmpty)
+    }
+
+    func testGeneratedBatchFailureRetainsIDForRetry() async throws {
+        let (scheduler, store, journal, _) = fixture()
+        store.rejectID = "r0"
+        var failedID: String?
+        do {
+            try await scheduler.scheduleBatch(reminders: [reminder(0)])
+            XCTFail("Expected scheduling failure")
+        } catch let error as BatchSchedulingError {
+            failedID = error.batchID
+            XCTAssertNotNil(UUID(uuidString: error.batchID))
+            XCTAssertTrue(error.underlyingError is CocoaError)
+            XCTAssertNotNil(journal.value.batches[error.batchID])
+        }
+        let id = try XCTUnwrap(failedID)
+        store.rejectID = nil
+        let retried = try await scheduler.scheduleBatch(id, reminders: [reminder(0)])
+        XCTAssertEqual(retried.id, id)
+        XCTAssertEqual(journal.value.batches.count, 1)
+    }
+
+    func testPreparedBatchPreservesGeneratedIDOnRepeatedScheduling() async throws {
+        let (scheduler, _, journal, _) = fixture()
+        let batch = ReminderBatch(reminders: [reminder(0)])
+        let first = try await scheduler.scheduleBatch(batch)
+        let second = try await scheduler.scheduleBatch(batch)
+        XCTAssertEqual(first.id, batch.id)
+        XCTAssertEqual(second.id, batch.id)
+        XCTAssertEqual(journal.value.batches.count, 1)
+    }
+
     func testIndividualScheduleEditAndRemovalPreserveOtherReminders() async throws {
         let (scheduler, store, _, _) = fixture()
         try await scheduler.schedule(reminder(0))

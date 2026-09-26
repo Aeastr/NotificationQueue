@@ -11,7 +11,7 @@
 - **Bounded scheduling.** The default budget is 60 pending requests, including any coverage warning. NotificationQueue uses a conservative 64-slot ceiling, accounts for other pending notifications, and keeps a spare slot for updates. It does not remove the system limit.
 - **Automatic coverage warnings.** When saved overflow or a finite schedule window could leave a gap, the coordinator schedules a reminder to reopen your app. Refills update the warning, with repeat suppression during the same low-coverage period. Warnings are off by default on badge-only tvOS.
 - **Execution opportunities.** Refresh on app activation and during background time your app receives. Background time is not guaranteed, and a delivered notification does not itself run the coordinator.
-- **Explicit outcomes and errors.** Operations throw validation, permission, storage, scheduling, verification, and cancellation errors. Their returned journal contains `lastOutcome`, identifying pending, deferred, and elapsed reminders plus warning status. An optional `onEvent` callback observes completion and failure; failures still throw.
+- **Explicit outcomes and errors.** Operations throw validation, permission, storage, scheduling, verification, and cancellation errors. Their scheduling receipts contain a `journal` with `lastOutcome`, identifying pending, deferred, and elapsed reminders plus warning status. An optional `onEvent` callback observes completion and failure; failures still throw.
 
 Per-reminder diagnostics persist across launches. They distinguish capacity deferral, a rejected submission, incomplete verification, and a deadline reached without a verified refill. Previously scheduled reminders whose dates passed have **unknown delivery**, not an assumed failure. Inspect `try notifications.diagnostics()` after a refresh; failures can also be inspected after catching an operation error. Detection resumes when the app next runs—NotificationQueue cannot identify why background time was unavailable.
 
@@ -68,15 +68,15 @@ struct ReminderDemoApp: App {
             }
 
             let reminder = LocalReminder(
-                id: "demo.reminder",
+                id: "demo.reminder", // Repeated button taps update this same reminder.
                 date: Date().addingTimeInterval(3600),
                 title: "Your reminder",
                 body: "It's time to take a break."
             )
             let result = try await notifications.schedule(reminder)
-            if result.lastOutcome?.scheduledReminderIDs.contains(reminder.id) == true {
+            if result.journal.lastOutcome?.scheduledReminderIDs.contains(reminder.id) == true {
                 status = "Reminder scheduled."
-            } else if result.lastOutcome?.deferredReminderIDs.contains(reminder.id) == true {
+            } else if result.journal.lastOutcome?.deferredReminderIDs.contains(reminder.id) == true {
                 status = "Reminder saved; waiting for a scheduling slot."
             } else {
                 status = "The reminder time passed; delivery is unknown."
@@ -95,36 +95,47 @@ struct ReminderDemoApp: App {
 Inside an async action using the same `notifications` coordinator, wrap these calls in `do` / `catch` as above:
 
 ```swift
-// Schedule one reminder.
+// Omit the ID to generate one. The reminder also exposes it before scheduling.
 let reminder = LocalReminder(
-    id: "break", date: Date().addingTimeInterval(3600),
+    date: Date().addingTimeInterval(3600),
     title: "Take a break", body: "Time to stretch."
 )
-try await notifications.schedule(reminder)
+let saved = try await notifications.schedule(reminder)
 
-// Edit that reminder by keeping its ID.
+// Keep the returned ID to edit the same reminder later.
 let edited = LocalReminder(
-    id: "break", date: Date().addingTimeInterval(7200),
+    id: saved.id, date: Date().addingTimeInterval(7200),
     title: "Take a break", body: "Your break moved to later."
 )
 try await notifications.update(edited)
 
-// Schedule a named group for the first time.
 let morning = LocalReminder(
-    id: "morning", date: Date().addingTimeInterval(86400),
+    date: Date().addingTimeInterval(86400),
     title: "Morning reminder", body: "Plan your day."
 )
 let evening = LocalReminder(
-    id: "evening", date: Date().addingTimeInterval(129600),
+    date: Date().addingTimeInterval(129600),
     title: "Evening reminder", body: "Review your day."
 )
-try await notifications.scheduleBatch("tomorrow", reminders: [morning, evening])
 
-// Replace that group's complete contents; the omitted evening reminder is cancelled.
-try await notifications.replaceBatch("tomorrow", with: [morning])
+// Generate a batch ID and retain it for replacement or cancellation.
+let group = try await notifications.scheduleBatch(reminders: [morning, evening])
+try await notifications.replaceBatch(group.id, with: [morning])
+
+// Or supply your own stable identifiers when scheduling.
+let named = LocalReminder(
+    id: "daily-break", date: Date().addingTimeInterval(3600),
+    title: "Take a break", body: "Time to stretch."
+)
+try await notifications.schedule(named)
+// For a named batch, supply the first argument to scheduleBatch, e.g. "tomorrow".
 ```
 
-`update(edited)` throws if the reminder ID is unknown. Both batch methods create a missing batch or replace an existing one; their names express the intent at the call site. Other reminders and batches stay intact. Use `removeReminder("break")` or `removeBatch("tomorrow")` to cancel them. See [individual reminders](Sources/NotificationQueue/Documentation.docc/Scheduling/IndividualReminders.md) and [batches](Sources/NotificationQueue/Documentation.docc/Scheduling/ManagingBatches.md) for details.
+`LocalReminder` and `ReminderBatch` generate IDs when omitted or `nil`. Store `saved.id` or `group.id` in your app's model if you need them after relaunch. Creating another value without an ID creates a new identity; editing must reuse the original ID. `update(edited)` throws if that ID is unknown.
+
+Scheduling returns a receipt containing the ID and a `journal` with scheduling outcomes and diagnostics. If batch scheduling throws, `BatchSchedulingError.batchID` preserves even a generated ID and `underlyingError` retains the cause. For individual failures, `reminder.id` is available before the call. Reuse those IDs for retries.
+
+Both batch methods create a missing batch or replace an existing one. Use `removeReminder(saved.id)` or `removeBatch(group.id)` to cancel. See [individual reminders](Sources/NotificationQueue/Documentation.docc/Scheduling/IndividualReminders.md) and [batches](Sources/NotificationQueue/Documentation.docc/Scheduling/ManagingBatches.md) for details.
 
 The **“Open Reminder Demo to keep reminders going” warning is built in**. NotificationQueue schedules it when coverage is running low, moves it after refills, and avoids repeating it during the same low-coverage period. This single-reminder example needs no warning because everything fits. You do not schedule the warning yourself.
 

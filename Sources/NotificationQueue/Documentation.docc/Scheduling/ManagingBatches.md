@@ -46,3 +46,28 @@ let state = try await coordinator.refresh()
 ```
 
 Refresh replenishes the queue from persisted batches. Read the returned ``ReminderJournal`` for verified refill time and coverage. When your app's data changes, replace the affected batches instead of replaying stale data. See <doc:GeneratedSchedules> for recurring sources with a finite generation window.
+
+## Generated Batch IDs
+
+```swift
+let saved = try await coordinator.scheduleBatch(reminders: reminders)
+// Persist saved.id in your app's model for later use.
+try await coordinator.replaceBatch(saved.id, with: revisedReminders)
+```
+
+Here `reminders` and `revisedReminders` are arrays supplied by your app. Omit the first argument or pass `nil` to generate an ID; pass a string to choose one. The returned ``NotificationQueue/BatchReceipt`` contains `id`, the submitted `batch`, and its verified `journal`.
+
+You can also create `let batch = ReminderBatch(reminders: reminders)` and call `scheduleBatch(batch)`. Its ID is available before scheduling. Reuse the batch or ID on retries: creating a fresh generated ID creates a separate batch.
+
+Both `scheduleBatch` overloads throw ``NotificationQueue/BatchSchedulingError``. Its `batchID` preserves generated identity even on failure, while `underlyingError` preserves the original error, including cancellation. Existing `replaceBatch`, `update(batches:)`, and individual operations continue to throw their original errors directly. The coordinator's `onEvent` failure observer receives that original operation error.
+
+```swift
+do {
+    let saved = try await coordinator.scheduleBatch(reminders: reminders)
+    // Store saved.id and inspect saved.journal.lastOutcome.
+    print(saved.id)
+} catch let failure as BatchSchedulingError {
+    // Retain failure.batchID for recovery; do not generate another ID on retry.
+    print(failure.batchID, failure.underlyingError.localizedDescription)
+}
+```
