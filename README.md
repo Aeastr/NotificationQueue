@@ -141,6 +141,12 @@ The **“Open Reminder Demo to keep reminders going” warning is built in**. No
 
 This example refreshes when the app becomes active. To also refill during background execution, connect your app's platform-specific background task to the same coordinator; see the [SwiftUI integration guide](Sources/NotificationQueue/Documentation.docc/Integration/SwiftUIQuickStart.md). System notification presentation still follows app permissions; foreground banners require a notification delegate.
 
+## Demo app
+
+Open [NotificationQueueDemo.xcodeproj](Examples/NotificationQueueDemo/NotificationQueueDemo.xcodeproj) from a clone or download of this repository, choose the **NotificationQueueDemo** scheme and an iPhone or iPad simulator, and run it. The app shows pending reminders, overflow, batch contents, and retained diagnostics, with scheduling, editing, and cancellation controls. See the [demo guide](Examples/NotificationQueueDemo/README.md) for device signing and behaviour.
+
+The demo references this package locally. It has its own app target under `Examples` and is not built or bundled into apps that depend on the NotificationQueue library.
+
 ## Documentation
 
 The [DocC catalog](Sources/NotificationQueue/Documentation.docc/NotificationQueue.md) combines usage guides with the inline API documentation.
