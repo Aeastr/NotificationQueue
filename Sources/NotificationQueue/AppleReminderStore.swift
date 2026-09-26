@@ -1,6 +1,9 @@
 import Foundation
 import UserNotifications
 
+/// Schedules dated notifications through UserNotifications in an isolated namespace.
+///
+/// Presentation follows the capabilities described in <doc:PlatformSupport>.
 @MainActor
 public final class AppleReminderStore: ReminderNotificationStore {
     private let center: UNUserNotificationCenter
@@ -9,14 +12,18 @@ public final class AppleReminderStore: ReminderNotificationStore {
         prefix = namespace + "."
         self.center = center
     }
-    public func pending() async -> [LocalReminder] {
-        await center.pendingNotificationRequests().compactMap { request in
-            guard request.identifier.hasPrefix(prefix),
-                  let trigger = request.trigger as? UNCalendarNotificationTrigger,
-                  let date = trigger.nextTriggerDate() else { return nil }
+    public func pending() async throws -> [LocalReminder] {
+        let requests = await center.pendingNotificationRequests()
+        return try requests.filter { $0.identifier.hasPrefix(prefix) }.map { request in
+            guard let trigger = request.trigger as? UNCalendarNotificationTrigger, !trigger.repeats,
+                  let date = trigger.nextTriggerDate() ?? trigger.dateComponents.date else {
+                throw AppleReminderStoreError.unrecognizedPendingRequest(identifier: request.identifier)
+            }
             #if os(tvOS)
-            let title = request.content.userInfo["NotificationQueue.title"] as? String ?? ""
-            let body = request.content.userInfo["NotificationQueue.body"] as? String ?? ""
+            guard let title = request.content.userInfo["NotificationQueue.title"] as? String,
+                  let body = request.content.userInfo["NotificationQueue.body"] as? String else {
+                throw AppleReminderStoreError.unrecognizedPendingRequest(identifier: request.identifier)
+            }
             #else
             let title = request.content.title
             let body = request.content.body
@@ -27,6 +34,18 @@ public final class AppleReminderStore: ReminderNotificationStore {
     }
     public func otherPendingCount() async -> Int {
         await center.pendingNotificationRequests().filter { !$0.identifier.hasPrefix(prefix) }.count
+    }
+    public func checkSchedulingAuthorization() async throws {
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
+        case .notDetermined: throw AppleReminderStoreError.authorizationNotRequested
+        case .denied: throw AppleReminderStoreError.authorizationDenied
+        case .authorized, .provisional: return
+        #if os(iOS) || os(visionOS)
+        case .ephemeral: return
+        #endif
+        @unknown default: throw AppleReminderStoreError.unsupportedAuthorizationStatus
+        }
     }
     public func validate(_ reminders: [LocalReminder]) throws {
         #if os(tvOS)
@@ -64,7 +83,17 @@ public final class AppleReminderStore: ReminderNotificationStore {
 
 public enum AppleReminderStoreError: LocalizedError {
     case badgeRequiredOnTV
+    case authorizationNotRequested
+    case authorizationDenied
+    case unsupportedAuthorizationStatus
+    case unrecognizedPendingRequest(identifier: String)
     public var errorDescription: String? {
-        "tvOS notifications require a badge value; alert text and sounds are unavailable."
+        switch self {
+        case .badgeRequiredOnTV: "tvOS notifications require a badge value; alert text and sounds are unavailable."
+        case .authorizationNotRequested: "Request notification permission before scheduling reminders."
+        case .authorizationDenied: "Notification permission is denied. Enable it in system settings."
+        case .unsupportedAuthorizationStatus: "The system returned an unsupported notification authorization status."
+        case .unrecognizedPendingRequest(let identifier): "An owned pending notification could not be read: \(identifier)."
+        }
     }
 }

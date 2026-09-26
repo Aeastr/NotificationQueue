@@ -23,6 +23,109 @@ final class NotificationCoordinatorTests: XCTestCase {
         return (scheduler, notifications, journal, clock)
     }
 
+    func testIndividualScheduleEditAndRemovalPreserveOtherReminders() async throws {
+        let (scheduler, store, _, _) = fixture()
+        try await scheduler.schedule(reminder(0))
+        try await scheduler.schedule(reminder(1))
+        let edited = reminder(0, title: "Edited")
+        try await scheduler.update(edited)
+        XCTAssertEqual(store.values["r0"], edited)
+        XCTAssertNotNil(store.values["r1"])
+        try await scheduler.schedule(edited)
+        XCTAssertEqual(store.values.count, 2)
+        try await scheduler.removeReminder("r0")
+        XCTAssertEqual(Set(store.values.keys), ["r1"])
+    }
+
+    func testIndividualEditPreservesBatchMembershipAndHorizon() async throws {
+        let (scheduler, store, journal, _) = fixture()
+        let horizon = epoch.addingTimeInterval(86400)
+        try await scheduler.scheduleBatch("day", reminders: [reminder(0), reminder(1)], evaluatedThrough: horizon)
+        let edited = reminder(0, title: "Edited")
+        try await scheduler.update(edited)
+        XCTAssertEqual(journal.value.batches["day"]?.reminders.count, 2)
+        XCTAssertEqual(journal.value.batches["day"]?.evaluatedThrough, horizon)
+        XCTAssertEqual(store.values["r0"], edited)
+        try await scheduler.replaceBatch("day", with: [reminder(1)])
+        XCTAssertNil(store.values["r0"])
+        XCTAssertNotNil(store.values["r1"])
+    }
+
+    func testUnknownIndividualEditThrowsWithoutCreatingReminder() async throws {
+        let (scheduler, store, journal, _) = fixture()
+        do {
+            try await scheduler.update(reminder(0))
+            XCTFail("Expected missing reminder error")
+        } catch ReminderSchedulingError.reminderNotFound(let id) {
+            XCTAssertEqual(id, "r0")
+        }
+        XCTAssertTrue(journal.value.batches.isEmpty)
+        XCTAssertTrue(store.values.isEmpty)
+    }
+
+    func testConcurrentIndividualSchedulingPreservesBothUpdates() async throws {
+        let (scheduler, store, _, _) = fixture()
+        let first = Task { try await scheduler.schedule(reminder(0)) }
+        let second = Task { try await scheduler.schedule(reminder(1)) }
+        _ = try await first.value
+        _ = try await second.value
+        XCTAssertEqual(Set(store.values.keys), ["r0", "r1"])
+    }
+
+    func testDeferredDeadlineIsReportedAfterRestartAndRetained() async throws {
+        let (scheduler, store, journal, clock) = fixture()
+        try await scheduler.scheduleBatch("all", reminders: (0..<100).map { reminder($0) })
+        XCTAssertEqual(journal.value.reminderDiagnostics?["r99"]?.reason, .capacity)
+        clock.date = epoch.addingTimeInterval(101 * 3600)
+        let restarted = NotificationCoordinator(notifications: store, journal: journal,
+                                               policy: policy, now: { clock.date })
+        let result = try await restarted.refresh()
+        XCTAssertEqual(result.reminderDiagnostics?["r99"]?.state, .elapsed)
+        XCTAssertEqual(result.reminderDiagnostics?["r99"]?.reason, .noVerifiedRefillBeforeDeadline)
+        XCTAssertEqual(result.reminderDiagnostics?["r0"]?.reason, .deliveryUnknown)
+        try await restarted.refresh()
+        XCTAssertEqual(try restarted.diagnostics().first { $0.reminderID == "r99" }?.reason,
+                       .noVerifiedRefillBeforeDeadline)
+    }
+
+    func testSubmissionErrorSurvivesUntilDeadlineReport() async throws {
+        let (scheduler, store, journal, clock) = fixture()
+        store.rejectID = "r0"
+        do {
+            try await scheduler.schedule(reminder(0))
+            XCTFail("Expected rejection")
+        } catch {}
+        XCTAssertEqual(journal.value.reminderDiagnostics?["r0"]?.reason, .submissionFailed)
+        XCTAssertNotNil(journal.value.reminderDiagnostics?["r0"]?.detail)
+        clock.date = epoch.addingTimeInterval(3601)
+        try await scheduler.refresh()
+        XCTAssertEqual(journal.value.reminderDiagnostics?["r0"]?.state, .elapsed)
+        XCTAssertEqual(journal.value.reminderDiagnostics?["r0"]?.reason, .submissionFailed)
+    }
+
+    func testUnverifiedSubmissionDoesNotClaimMissedBackgroundExecution() async throws {
+        let (scheduler, store, journal, clock) = fixture()
+        store.silentlyDropAdds = true
+        do {
+            try await scheduler.schedule(reminder(0))
+            XCTFail("Expected verification error")
+        } catch {}
+        clock.date = epoch.addingTimeInterval(3601)
+        try await scheduler.refresh()
+        XCTAssertEqual(journal.value.reminderDiagnostics?["r0"]?.reason, .schedulingUnconfirmed)
+    }
+
+    func testReschedulingSameIDStartsNewDiagnosticOccurrence() async throws {
+        let (scheduler, _, journal, clock) = fixture()
+        try await scheduler.schedule(reminder(0))
+        clock.date = epoch.addingTimeInterval(3601)
+        try await scheduler.refresh()
+        try await scheduler.schedule(reminder(0, after: 7200))
+        XCTAssertEqual(journal.value.reminderDiagnostics?["r0"]?.state, .scheduled)
+        XCTAssertNil(journal.value.reminderDiagnostics?["r0"]?.reason)
+        XCTAssertEqual(journal.value.reminderDiagnostics?["r0"]?.requestedDate, epoch.addingTimeInterval(7200))
+    }
+
     func testOverflowPersistsAndNearestRequestsFitIncludingWarning() async throws {
         let (scheduler, notifications, journal, _) = fixture()
         let values = (0..<100).reversed().map { reminder($0) }
@@ -101,7 +204,7 @@ final class NotificationCoordinatorTests: XCTestCase {
         do {
             try await scheduler.update(batches: [ReminderBatch(id: "all", reminders: [reminder(0)])])
             XCTFail("Expected verification failure")
-        } catch ReminderSchedulingError.verificationFailed {} catch { XCTFail("Unexpected error: \(error)") }
+        } catch ReminderSchedulingError.verificationMismatch {} catch { XCTFail("Unexpected error: \(error)") }
         XCTAssertTrue(journal.value.needsReconciliation)
         XCTAssertNil(journal.value.lastSuccessfulRefill)
     }
@@ -289,6 +392,110 @@ final class NotificationCoordinatorTests: XCTestCase {
         XCTAssertEqual(decoded.batches["badges"]?.reminders.first?.badge, 4)
     }
 
+    func testAppNamePolicyAutomaticallyCreatesCoverageWarningWhenNeeded() async throws {
+        let clock = TestClock(epoch)
+        let store = FakeNotifications(clock: clock)
+        let journal = MemoryJournal()
+        let policy = ReminderPolicy(appName: "Study", namespace: "study.reminders")
+        let coordinator = NotificationCoordinator(notifications: store, journal: journal,
+                                                  policy: policy, now: { clock.date })
+        let result = try await coordinator.replaceBatch("week", with: (0..<100).map { reminder($0) })
+        #if os(tvOS)
+        XCTAssertNil(result.planned?.warning)
+        #else
+        XCTAssertEqual(result.planned?.warning?.title, "Open Study to keep reminders going")
+        XCTAssertNotNil(store.values[policy.warningID])
+        #endif
+        try await coordinator.removeBatch("week")
+        XCTAssertTrue(store.values.isEmpty)
+        XCTAssertNil(journal.value.coverageEnd)
+    }
+
+    func testInvalidPolicyThrowsBeforeSavingOrScheduling() async throws {
+        let clock = TestClock(epoch)
+        let store = FakeNotifications(clock: clock)
+        let journal = MemoryJournal()
+        let invalid = ReminderPolicy(namespace: "test", pendingBudget: 100,
+                                     warningTitle: "Open app", warningBody: "Refresh")
+        let coordinator = NotificationCoordinator(notifications: store, journal: journal,
+                                                  policy: invalid, now: { clock.date })
+        do {
+            try await coordinator.replaceBatch("all", with: [reminder(0)])
+            XCTFail("Expected invalid policy error")
+        } catch ReminderSchedulingError.invalidPolicy {}
+        XCTAssertTrue(journal.value.batches.isEmpty)
+        XCTAssertEqual(store.addCount, 0)
+    }
+
+    func testExpiredInputIsRejectedBeforeSaving() async throws {
+        let (scheduler, notifications, journal, _) = fixture()
+        do {
+            try await scheduler.replaceBatch("old", with: [reminder(0, after: -1)])
+            XCTFail("Expected expired input error")
+        } catch ReminderSchedulingError.expiredReminders(let ids) {
+            XCTAssertEqual(ids, ["r0"])
+        }
+        XCTAssertTrue(journal.value.batches.isEmpty)
+        XCTAssertTrue(notifications.values.isEmpty)
+    }
+
+    func testNoCapacityThrowsAndRetainsIntent() async throws {
+        let (scheduler, notifications, journal, _) = fixture()
+        notifications.externalCount = 63
+        do {
+            try await scheduler.replaceBatch("all", with: [reminder(0)])
+            XCTFail("Expected no capacity error")
+        } catch ReminderSchedulingError.noCapacity {}
+        XCTAssertTrue(journal.value.needsReconciliation)
+        XCTAssertEqual(journal.value.batches["all"]?.reminders.count, 1)
+    }
+
+    func testPermissionFailureIsObservedAndThrown() async throws {
+        let (scheduler, notifications, journal, _) = fixture()
+        notifications.authorizationError = AppleReminderStoreError.authorizationDenied
+        var observed = false
+        scheduler.onEvent = { event in
+            if case .failed(let error) = event,
+               case AppleReminderStoreError.authorizationDenied = error { observed = true }
+        }
+        do {
+            try await scheduler.replaceBatch("all", with: [reminder(0)])
+            XCTFail("Expected authorization error")
+        } catch AppleReminderStoreError.authorizationDenied {}
+        XCTAssertTrue(observed)
+        XCTAssertTrue(journal.value.needsReconciliation)
+        XCTAssertTrue(notifications.values.isEmpty)
+    }
+
+    func testOutcomeSeparatesOverflowAndElapsedSavedReminders() async throws {
+        let (scheduler, _, _, clock) = fixture()
+        let initial = try await scheduler.replaceBatch("all", with: (0..<100).map { reminder($0) })
+        XCTAssertEqual(initial.lastOutcome?.scheduledReminderIDs.count, 59)
+        XCTAssertEqual(initial.lastOutcome?.deferredReminderIDs.count, 41)
+        XCTAssertEqual(initial.lastOutcome?.warningStatus, .scheduled)
+        clock.date = epoch.addingTimeInterval(3601)
+        let refreshed = try await scheduler.refresh()
+        XCTAssertEqual(refreshed.lastOutcome?.elapsedReminderIDs, ["r0"])
+    }
+
+    func testReadAndRemovalErrorsPropagate() async throws {
+        let (scheduler, notifications, journal, _) = fixture()
+        try await scheduler.replaceBatch("all", with: [reminder(0)])
+        notifications.readError = CocoaError(.fileReadUnknown)
+        do {
+            try await scheduler.refresh()
+            XCTFail("Expected read error")
+        } catch let error as CocoaError { XCTAssertEqual(error.code, .fileReadUnknown) }
+        notifications.readError = nil
+        notifications.removalError = CocoaError(.fileWriteUnknown)
+        do {
+            try await scheduler.removeBatch("all")
+            XCTFail("Expected removal error")
+        } catch let error as CocoaError { XCTAssertEqual(error.code, .fileWriteUnknown) }
+        XCTAssertTrue(journal.value.needsReconciliation)
+        XCTAssertNotNil(notifications.values["r0"])
+    }
+
     func testDatesAreNormalizedToAppleTriggerPrecision() async {
         let value = LocalReminder(id: "fractional", date: epoch.addingTimeInterval(0.875), title: "", body: "")
         XCTAssertEqual(value.date, epoch)
@@ -319,8 +526,15 @@ final class NotificationCoordinatorTests: XCTestCase {
     var ignoreRemovals = false
     var addCount = 0
     var gate: Gate?
+    var authorizationError: Error?
+    var readError: Error?
+    var removalError: Error?
     init(clock: TestClock) { self.clock = clock }
-    func pending() async -> [LocalReminder] {
+    func checkSchedulingAuthorization() async throws {
+        if let authorizationError { throw authorizationError }
+    }
+    func pending() async throws -> [LocalReminder] {
+        if let readError { throw readError }
         values = values.filter { $0.value.date > clock.date }
         return Array(values.values)
     }
@@ -332,7 +546,8 @@ final class NotificationCoordinatorTests: XCTestCase {
         addCount += 1
         if !silentlyDropAdds { values[reminder.id] = reminder }
     }
-    func remove(_ identifiers: [String]) async {
+    func remove(_ identifiers: [String]) async throws {
+        if let removalError { throw removalError }
         if !ignoreRemovals { identifiers.forEach { values.removeValue(forKey: $0) } }
     }
 }

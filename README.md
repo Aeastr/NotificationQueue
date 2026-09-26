@@ -4,100 +4,137 @@
   <p><img src="https://img.shields.io/badge/iOS%20%2F%20iPadOS-16%2B-000000?logo=apple" alt="iOS / iPadOS 16+"> <img src="https://img.shields.io/badge/macOS-13%2B-000000?logo=apple" alt="macOS 13+"> <img src="https://img.shields.io/badge/Mac%20Catalyst-16%2B-000000?logo=apple" alt="Mac Catalyst 16+"> <img src="https://img.shields.io/badge/watchOS-9%2B-000000?logo=apple" alt="watchOS 9+"> <img src="https://img.shields.io/badge/tvOS-16%2B-000000?logo=apple" alt="tvOS 16+"> <img src="https://img.shields.io/badge/visionOS-1%2B-000000?logo=apple" alt="visionOS 1+"> <img src="https://img.shields.io/badge/Swift-5.10%2B-F05138?logo=swift&amp;logoColor=white" alt="Swift 5.10+"></p>
 </div>
 
-## Platform behaviour
 
-The queue and persistence layer supports iOS/iPadOS 16+, Mac Catalyst 16+, macOS 13+, watchOS 9+, tvOS 16+, and visionOS 1+. Each app supplies execution opportunities appropriate to its platform.
+## How it works
 
-On **tvOS**, Apple supports notification badges but not alert titles, bodies, or sounds. Supply a nonnegative `badge` value on each `LocalReminder` (`0` clears the badge). Text is retained as metadata and is not displayed. The Apple adapter rejects reminders without a badge before replacing batches. Coverage warning alerts are disabled by default on tvOS; the queue still reports `coverageEnd` for the host to handle. Keep that default when using the Apple adapter.
+- **Persistent overflow.** Save reminders individually or in named batches. The nearest reminders enter the system queue; the rest stay in the JSON journal for later refills.
+- **Bounded scheduling.** The default budget is 60 pending requests, including any coverage warning. NotificationQueue uses a conservative 64-slot ceiling, accounts for other pending notifications, and keeps a spare slot for updates. It does not remove the system limit.
+- **Automatic coverage warnings.** When saved overflow or a finite schedule window could leave a gap, the coordinator schedules a reminder to reopen your app. Refills update the warning, with repeat suppression during the same low-coverage period. Warnings are off by default on badge-only tvOS.
+- **Execution opportunities.** Refresh on app activation and during background time your app receives. Background time is not guaranteed, and a delivered notification does not itself run the coordinator.
+- **Explicit outcomes and errors.** Operations throw validation, permission, storage, scheduling, verification, and cancellation errors. Their returned journal contains `lastOutcome`, identifying pending, deferred, and elapsed reminders plus warning status. An optional `onEvent` callback observes completion and failure; failures still throw.
 
-On the other platforms, the Apple adapter schedules alert content with the default sound and an optional badge; presentation remains subject to the platform's notification settings. The package does not assume identical background execution or presentation across devices.
+Per-reminder diagnostics persist across launches. They distinguish capacity deferral, a rejected submission, incomplete verification, and a deadline reached without a verified refill. Previously scheduled reminders whose dates passed have **unknown delivery**, not an assumed failure. Inspect `try notifications.diagnostics()` after a refresh; failures can also be inspected after catching an operation error. Detection resumes when the app next runs—NotificationQueue cannot identify why background time was unavailable.
+
+Pending requests are verified before a refill is recorded as successful. That verifies scheduling, not delivery: system settings and notification presentation remain under Apple's control. If an operation fails after intent was saved, `refresh()` retries it; if saving failed, resubmit the update. See [handling failures](Sources/NotificationQueue/Documentation.docc/Coverage/HandlingFailures.md).
 
 ## Quick start
 
-Add this directory as a local Swift package and link the `NotificationQueue` product.
+Add NotificationQueue as a local Swift package and link the `NotificationQueue` product. This iOS SwiftUI example replaces the app's `@main` entry point: the coordinator lives in app state, the button requests permission and schedules a reminder, and returning to the app refreshes saved reminders.
 
 ```swift
-import Foundation
+import SwiftUI
+import UserNotifications
 import NotificationQueue
 
+@main
 @MainActor
-func makeCoordinator() -> NotificationCoordinator {
-    NotificationCoordinator(
-        policy: ReminderPolicy(
-            namespace: "com.example.reminders",
-            warningTitle: "Open the app to keep reminders going",
-            warningBody: "Refresh your upcoming reminders."
-        ),
-        journalURL: URL.applicationSupportDirectory
-            .appending(path: "Reminders/journal.json")
+struct ReminderDemoApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var notifications = NotificationCoordinator(
+        appName: "Reminder Demo",
+        namespace: "com.example.reminders"
     )
+    @State private var status = ""
+
+    var body: some Scene {
+        WindowGroup {
+            VStack(spacing: 16) {
+                Button("Remind me in an hour") {
+                    Task { await scheduleReminder() }
+                }
+                Text(status)
+            }
+            .padding()
+            .task(id: scenePhase) {
+                guard scenePhase == .active else { return }
+                do {
+                    try await notifications.refresh()
+                } catch is CancellationError {
+                    status = "Refresh interrupted; it will retry when the app is active."
+                } catch {
+                    status = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func scheduleReminder() async {
+        do {
+            let allowed = try await UNUserNotificationCenter.current()
+                .requestAuthorization(options: [.alert, .sound])
+            guard allowed else {
+                status = "Allow notifications in Settings to receive reminders."
+                return
+            }
+
+            let reminder = LocalReminder(
+                id: "demo.reminder",
+                date: Date().addingTimeInterval(3600),
+                title: "Your reminder",
+                body: "It's time to take a break."
+            )
+            let result = try await notifications.schedule(reminder)
+            if result.lastOutcome?.scheduledReminderIDs.contains(reminder.id) == true {
+                status = "Reminder scheduled."
+            } else if result.lastOutcome?.deferredReminderIDs.contains(reminder.id) == true {
+                status = "Reminder saved; waiting for a scheduling slot."
+            } else {
+                status = "The reminder time passed; delivery is unknown."
+            }
+        } catch {
+            status = error.localizedDescription
+        }
+    }
 }
 ```
 
-Keep one coordinator alive per journal/namespace. Request notification permission in your app's UI before scheduling. The package never prompts, installs a notification delegate, starts a background task, or knows what a class or assignment is.
+`schedule(reminder)` works on the first call. Calling it again with the same ID updates that reminder; it does not create a duplicate. Use `refresh()` to refill saved reminders when your app gets time to run.
+
+### Schedule, edit, and group reminders
+
+Inside an async action using the same `notifications` coordinator, wrap these calls in `do` / `catch` as above:
 
 ```swift
-let meeting = LocalReminder(
-    id: "meeting.42",
-    date: meetingStart.addingTimeInterval(-600),
-    title: "Design review",
-    body: "Starts in 10 minutes"
+// Schedule one reminder.
+let reminder = LocalReminder(
+    id: "break", date: Date().addingTimeInterval(3600),
+    title: "Take a break", body: "Time to stretch."
 )
+try await notifications.schedule(reminder)
 
-// Same batch ID replaces its contents. Other batches are preserved.
-try await coordinator.update(batches: [
-    ReminderBatch(id: "meetings", reminders: [meeting]),
-    ReminderBatch(id: "tasks", reminders: taskReminders)
-])
+// Edit that reminder by keeping its ID.
+let edited = LocalReminder(
+    id: "break", date: Date().addingTimeInterval(7200),
+    title: "Take a break", body: "Your break moved to later."
+)
+try await notifications.update(edited)
 
-// Recover saved intent and replenish from persisted overflow.
-let state = try await coordinator.refresh()
+// Schedule a named group for the first time.
+let morning = LocalReminder(
+    id: "morning", date: Date().addingTimeInterval(86400),
+    title: "Morning reminder", body: "Plan your day."
+)
+let evening = LocalReminder(
+    id: "evening", date: Date().addingTimeInterval(129600),
+    title: "Evening reminder", body: "Review your day."
+)
+try await notifications.scheduleBatch("tomorrow", reminders: [morning, evening])
 
-// Cancel a whole batch without disturbing the others.
-try await coordinator.update(removing: ["meetings"])
+// Replace that group's complete contents; the omitted evening reminder is cancelled.
+try await notifications.replaceBatch("tomorrow", with: [morning])
 ```
 
-IDs must be stable, nonempty and unique across all batches. `__coverage` is reserved. An empty batch cancels that batch's reminders. Overlapping date-range batches must not duplicate reminder IDs; replace a shared batch instead, or remove overlapping batches in the same update.
+`update(edited)` throws if the reminder ID is unknown. Both batch methods create a missing batch or replace an existing one; their names express the intent at the call site. Other reminders and batches stay intact. Use `removeReminder("break")` or `removeBatch("tomorrow")` to cancel them. See [individual reminders](Sources/NotificationQueue/Documentation.docc/Scheduling/IndividualReminders.md) and [batches](Sources/NotificationQueue/Documentation.docc/Scheduling/ManagingBatches.md) for details.
 
-## Generated schedules
+The **“Open Reminder Demo to keep reminders going” warning is built in**. NotificationQueue schedules it when coverage is running low, moves it after refills, and avoids repeating it during the same low-coverage period. This single-reminder example needs no warning because everything fits. You do not schedule the warning yourself.
 
-If your app expands a recurring source only through a certain date, supply `evaluatedThrough`. It is the earliest instant at which the source may need another reminder that has not been generated, accounting for any lead time.
+This example refreshes when the app becomes active. To also refill during background execution, connect your app's platform-specific background task to the same coordinator; see the [SwiftUI integration guide](Sources/NotificationQueue/Documentation.docc/Integration/SwiftUIQuickStart.md). System notification presentation still follows app permissions; foreground banners require a notification delegate.
 
-```swift
-try await coordinator.update(batches: [
-    ReminderBatch(id: "upcoming", reminders: expandedReminders,
-                  evaluatedThrough: nextUngeneratedReminderBoundary)
-])
-```
+## Documentation
 
-`refresh()` replenishes from saved batches; it cannot invent future occurrences beyond that boundary. Your host must regenerate and replace the batch when it receives execution time. Finite lists of all known reminders can omit the boundary.
+The [DocC catalog](Sources/NotificationQueue/Documentation.docc/NotificationQueue.md) combines usage guides with the inline API documentation.
 
-## Scheduling and recovery
-
-- Default budget: 60 pending requests, including one coverage warning when needed. Requests belonging to other namespaces count against Apple's 64-request ceiling and are never deleted by this package. At least one slot stays free for safe replacement while an existing warning remains scheduled.
-- Earliest reminders win, with stable ID ordering for ties. Overflow is persisted with the batch, rather than sent to iOS and discarded.
-- Updates run sequentially across suspension points. Repeating an update does not duplicate unchanged notifications.
-- Intent is atomically saved before changing pending requests. `lastSuccessfulRefill` advances only after verifying the requested notifications and removals.
-- Failures and cancellation retain unfinished intent. A later `refresh()` or `update()` retries it. Valid unchanged notifications remain in place; edits are not implemented by clearing the whole queue.
-- Warning attempts are journaled before submission, so interruption after delivery does not cause repeated warnings. If the attempt's outcome is unknowable, the package conservatively favours avoiding a duplicate warning.
-- Dates are normalized to whole seconds, matching Apple's calendar triggers. The Apple adapter uses absolute UTC instants; the host regenerates local-calendar occurrences after timezone changes.
-
-The journal contains notification text. Keep it in your app's protected storage. Do not use multiple coordinator instances or processes to write the same journal concurrently. A corrupted/unreadable journal produces an error rather than silently replacing the plan with an empty one.
-
-## Coverage warnings
-
-The boundary is the earliest omitted reminder or generation boundary, whichever comes first. A warning defaults to 24 hours before it, or halfway through the remaining coverage when less than 48 hours remains. Both the maximum lead and recovery interval are configurable through `ReminderPolicy`.
-
-Successful refills move the warning later. An unchanged boundary does not keep postponing it. Once the warning's scheduled time passes, the package suppresses another warning during that low-coverage episode; it rearms after coverage meaningfully extends beyond the recovery interval, or after all work becomes covered and a new shortfall appears. Pending state verifies scheduling, not actual presentation—permissions, Focus and OS behaviour still apply.
-
-## Host responsibilities
-
-Call `update()` after domain edits and when generating fresh occurrences. Call `refresh()` on launch or other execution opportunities when the persisted batches remain current. A host may use `BGAppRefreshTask`, but submitting that request is not proof a refill happened. Cancellation of the caller propagates into the scheduling pass.
-
-Local delivery does not wake your coordinator. The package cannot guarantee background execution, exceed the pending-request limit, or deliver an unlimited sequence of unique notifications without future execution time. The warning itself is scheduled in advance and does not depend on a future background task. If other features consume every available slot, no warning slot can be created.
-
-The Apple adapter supports dated, nonrepeating notifications, with presentation adapted to the platform as described above. Custom transports and journals can implement `ReminderNotificationStore` and `ReminderJournalStore`; those protocols also allow deterministic tests without notification permission or a running app.
-
-## Tests
-
-The XCTest suite covers batch replacement/removal, overflow and restart, concurrent updates, cancellation, failed writes/additions/removals, silent OS drops, external queue usage, warning timing and suppression, and journal corruption. The fake-store tests do not require a simulator or notification permission.
+- [Scheduling](Sources/NotificationQueue/Documentation.docc/Scheduling/Scheduling.md) — batches, recurring sources, and the coordinator API.
+- [Coverage](Sources/NotificationQueue/Documentation.docc/Coverage/Coverage.md) — queue replenishment, recovery, and warning policy.
+- [Integration](Sources/NotificationQueue/Documentation.docc/Integration/Integration.md) — app lifecycle, persistence, and Apple platforms.
+- [Customization](Sources/NotificationQueue/Documentation.docc/Customization/Customization.md) — store protocols and testing.
