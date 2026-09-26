@@ -1,0 +1,89 @@
+{
+  "features" : [
+    "refractivity"
+  ],
+  "fill" : {
+    "automatic-gradient" : "display-p3:0.87665,0.30892,0.28828,1.00000"
+  },
+  "groups" : [
+    {
+      "blur-material" : 0.08,
+      "layers" : [
+        {
+          "image-name" : "bell.fill.svg",
+          "name" : "bell.fill",
+          "position-specializations" : [
+            {
+              "idiom" : "square",
+              "value" : {
+                "scale" : 30,
+                "translation-in-points" : [
+                  0,
+                  0
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "lighting" : "individual",
+      "position" : {
+        "scale" : 1,
+        "translation-in-points" : [
+          1,
+          0
+        ]
+      },
+      "refractivity" : {
+        "depth" : 7.8125e-05,
+        "enabled" : true,
+        "strength" : 0.039765625
+      },
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 2
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.6
+      }
+    },
+    {
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "extended-gray:1.00000,1.00000"
+          },
+          "glass" : false,
+          "image-name" : "Grid.png",
+          "name" : "Grid",
+          "opacity" : 0.2,
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "lighting" : "individual",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : false,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
