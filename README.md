@@ -155,3 +155,7 @@ The [DocC catalog](Sources/NotificationQueue/Documentation.docc/NotificationQueu
 - [Coverage](Sources/NotificationQueue/Documentation.docc/Coverage/Coverage.md) — queue replenishment, recovery, and warning policy.
 - [Integration](Sources/NotificationQueue/Documentation.docc/Integration/Integration.md) — app lifecycle, persistence, and Apple platforms.
 - [Customization](Sources/NotificationQueue/Documentation.docc/Customization/Customization.md) — store protocols and testing.
+
+## License
+
+MIT. See [LICENSE](LICENSE) for details.
